@@ -1,0 +1,158 @@
+
+
+import pandas as pd
+import numpy as np
+# load dataset ربط ملف قاعدة البيانات 
+df = pd.read_csv('titles.csv')
+df.describe()
+df.info()
+
+
+# Preprocessing
+# Remove objects with missing values
+df.isna().sum()
+
+
+df.drop('description', axis=1, inplace=True)
+df.drop('age_certification', axis=1, inplace=True)
+
+df['production_countries'] = df['production_countries'].str.replace(r"[", '').str.replace(r"'", '').str.replace(r"]", '')
+df['lead_prod_country'] = df['production_countries'].str.split(',').str[0]
+
+# Let's also add a number of countries, envolved in movie making, so that we save a little more data
+df['prod_countries_cnt'] = df['production_countries'].str.split(',').str.len()
+df.lead_prod_country = df.lead_prod_country.replace('', np.nan)
+
+
+df['genres'] = df['genres'].str.replace(r"[", '').str.replace(r"'", '').str.replace(r"]", '')
+df['main_genre'] = df['genres'].str.split(',').str[0]
+df.drop(['genres', 'production_countries'], axis=1, inplace=True)
+
+df.head()
+
+
+df.main_genre = df.main_genre.replace('', np.nan)
+df['main_genre'].unique()
+
+df.loc[df['type'] == 'MOVIE', ['seasons']] = 0
+
+df.dropna(inplace=True)
+
+df.set_index('title', inplace=True)
+df.head()
+
+df.drop(['id', 'imdb_id'], axis=1, inplace=True)
+
+
+dummies = pd.get_dummies(df[['type', 'lead_prod_country', 'main_genre']], drop_first=True)
+df_movies_dum = pd.concat([df, dummies], axis=1)
+df_movies_dum.drop(['type', 'lead_prod_country', 'main_genre'], axis=1, inplace=True)
+df_movies_dum.head()
+
+
+
+
+
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+from sklearn.metrics import silhouette_samples, silhouette_score
+from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
+scaler = MinMaxScaler()
+df_scaled = scaler.fit_transform(df_movies_dum)
+df_scaled = pd.DataFrame(df_scaled, columns=[df_movies_dum.columns])
+df_scaled.describe().T
+
+df_scaled.info()
+
+df_scaled.head()
+
+
+
+# Create k-means model
+models_150 = KMeans(n_clusters=150, random_state=8, max_iter = 10000)
+# Train the model using the dataset
+model_labels_150 = models_150.fit_predict(df_scaled)
+# Calculate silhoutee score
+silhouette_avg_150 = silhouette_score(df_scaled, model_labels_150)
+print("For n_clusters =", 150, "The average silhouette_score is :", silhouette_avg_150)
+
+
+
+df['clusters'] = model_labels_150
+
+
+
+def recommend_movie(movie_name: str):
+  
+  # Define cluster of the input movie
+  movie_name = movie_name.lower()
+  df['name'] = df.index.str.lower()
+  movie = df[df.name.str.contains(movie_name)] 
+  cluster = movie['clusters'].iloc[0]
+  
+  # Get all the movies of the same cluster 
+  cluster_movies = df[df['clusters']==cluster]
+  
+  # Get 5 random movies of the same cluster
+  import random
+  all_movies = list(cluster_movies.index)
+  recommended_movies = random.sample(all_movies, 5)
+  for m in recommended_movies:
+    print(m)
+
+
+
+
+recommend_movie('Deliverance')
+
+
+
+
+from sklearn.cluster import DBSCAN
+from sklearn.metrics import silhouette_score
+
+# Create a DBSCAN object with the desired parameters
+dbscan = DBSCAN(eps=0.5, min_samples=5)
+
+# Fit the DBSCAN model to the scaled data
+dbscan.fit(df_scaled)
+
+# Predict the cluster labels for each data point
+dbscan_labels = dbscan.labels_
+
+# Calculate the number of clusters
+n_clusters_ = len(set(dbscan_labels)) - (1 if -1 in dbscan_labels else 0)
+
+# Calculate the silhouette score for the clustering
+dbscan_silhouette_avg = silhouette_score(df_scaled, dbscan_labels)
+
+# Print the number of clusters and the average silhouette score
+print('Estimated number of clusters: %d' % n_clusters_)
+print("The average silhouette_score is :", dbscan_silhouette_avg)
+
+# Add the cluster labels to the DataFrame
+df['DBSCANclusters'] = dbscan_labels
+
+
+
+
+
+def DBSCANrecommend_movie(movie_name: str):
+  
+  # Define cluster of the input movie
+  movie_name = movie_name.lower()
+  df['name'] = df.index.str.lower()
+  movie = df[df.name.str.contains(movie_name)] 
+  cluster = movie['DBSCANclusters'].iloc[0]
+# Get all the movies of the same cluster 
+  cluster_movies = df[df['DBSCANclusters']==cluster]
+  
+  # Get 5 random movies of the same cluster
+  import random
+  all_movies = list(cluster_movies.index)
+  recommended_movies = random.sample(all_movies, 5)
+  for m in recommended_movies:
+    print(m)
+
+
+DBSCANrecommend_movie('Deliverance')
